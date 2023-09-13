@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 
+{% block title %}
+exploits.forsale
+{% endblock title %}
+
 {% block content %}
-<h1 class="title">
-    This is my blog made with Zola.
-</h1>
+<section class="section">
+    {% set section = get_section(path="_index.md") %}
+    {% for page in section.pages %}
+    <a href="{{page.path}}"> {{page.title}} </a>
+    {% endfor %}
+</section>
 {% endblock content %}

@@ -1,0 +1,165 @@
+@import "reset.scss";
+
+$break-small: 900px; // at what point the site becomes "mobile"
+
+body {
+    //background: #eff1f5;
+    background: linear-gradient(30deg, rgb(200, 216, 234) 0%, rgba(255, 255, 255, 1) 100%);
+    color: #0b2441;
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    line-height: 1.5;
+    overflow-wrap: break-word;
+    margin-top: 2em;
+    margin-bottom: 2em;
+}
+
+section {
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto;
+    @media (max-width: $break-small) {
+        padding: 0 1em;
+        box-sizing: border-box;
+    }
+}
+
+// Headers
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-weight: 700;
+    margin-bottom: 0.5em;
+    line-height: 1.2;
+    font-family: Verdana, Geneva, Tahoma, sans-serif;
+}
+
+h1 {
+    font-size: 2em;
+}
+
+h2 {
+    font-size: 1.6em;
+}
+
+h3 {
+    font-size: 1em;
+}
+
+// paragraphs and lists
+p,
+ul,
+ol {
+    font-weight: 300;
+    line-height: 1.7;
+    font-size: 1em;
+    margin-bottom: 1.2em;
+}
+
+ul,
+ol {
+    p {
+        padding: 0 0 !important;
+    }
+    @media (max-width: $break-small) {
+        list-style-position: inside;
+    }
+}
+
+li {
+    padding: 6px 0;
+}
+
+// text styles
+em {
+    font-style: italic;
+}
+
+strong {
+    font-weight: bold;
+}
+
+// blockquotes
+blockquote {
+    font-style: italic;
+    border-left: 3px solid #131313;
+    max-width: 600px;
+    blockquote {
+        // add margin to nested blockquotes
+        margin-left: 1em;
+    }
+    p {
+        margin-left: 1em;
+    }
+}
+
+// Links and Selections
+a {
+    font-weight: bold;
+    text-decoration: none;
+}
+
+// Code
+pre,
+code {
+    font-family: monospace;
+    background: #0000000c;
+    padding: 0.2em 0.5em;
+}
+
+pre {
+    box-sizing: border-box;
+    padding: 1em;
+    display: block;
+    margin: 2em 0;
+    font-size: 0.8em;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+    word-wrap: break-word;
+    position: relative;
+    width: 872px;
+    left: -36px;
+    //background: white !important;
+    border: 1px #000000 inset;
+    background-color: rgb(249, 249, 249) !important;
+
+    @media (max-width: $break-small) {
+        width: 100%;
+        left: 0;
+    }
+
+    code {
+        padding: 0;
+        font-size: 100%;
+        color: inherit;
+        background-color: transparent;
+    }
+}
+
+small {
+    font-size: 0.7em;
+    margin: 0.2 0;
+    > p {
+        line-height: 1.5;
+    }
+}
+
+.meta {
+    box-sizing: border-box;
+    border: #131313 2px dotted;
+    padding: 1em;
+    display: inline-block;
+    > p {
+        margin-bottom: 1em;
+    }
+}
+
+.icon {
+    line-height: 0;
+    margin: 0;
+    padding: 0;
+}
