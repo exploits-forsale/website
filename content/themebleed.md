@@ -102,7 +102,7 @@ A `.themepack` file is a cab file containing a `.theme` file. When a `.themepack
 
 I developed a PoC for this issue. The PoC consists of two components, an SMB server executable to be run on an attacker's machine, and a `.theme` file to be opened on the target's machine.
 
-I chose to use an attacker controlled SMB server for this because a `.theme` file may point to a `.msstyle` path on a remote SMB share. Since the SMB share is attacker controlled, it can easily exploit the ToCToU bug in `ReviseVersionIfNecessary` by returning a validly signed file when the client first requests it to check the signature, and then a malicious one when the client loads the DLL.
+I chose to use an attacker controlled SMB server for this because a `.theme` file may point to a `.msstyle` path on a remote SMB share. Since the SMB share is attacker controlled, it can easily exploit the TOCTOU bug in `ReviseVersionIfNecessary` by returning a validly signed file when the client first requests it to check the signature, and then a malicious one when the client loads the DLL.
 
 The PoC can be found here: https://github.com/gabe-k/themebleed
 
@@ -155,7 +155,7 @@ To fix this vulnerability I would recommend:
 
 ## Microsoft Fix Analysis
 
-Microsoft's released fix for the issue removed the "version 999" functionality entirely. While that migitates this specific exploit, it still does not address the ToCToU issue in the signing of `.msstyles` files.
+Microsoft's released fix for the issue removed the "version 999" functionality entirely. While that migitates this specific exploit, it still does not address the TOCTOU issue in the signing of `.msstyles` files.
 
 Additionally Microsoft has not added Mark-of-the-Web warnings on `.themepack` files.
 
