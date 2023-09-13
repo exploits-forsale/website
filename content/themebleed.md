@@ -5,7 +5,7 @@ date = 2023-09-13
 author = "gabe_k"
 +++
 
-This is a fun bug I found while poking around at weird Windows file formats. It's a kind of classic Windows style vulnerability featuring broken signing, sketchy DLL loads, file races, cab files, and mark-of-the-web silliness. It was also my first experience submitting to the MSRC Windows bug bounty since leaving Microsoft in April of 2022. 
+This is a fun bug I found while poking around at weird Windows file formats. It's a kind of classic Windows style vulnerability featuring broken signing, sketchy DLL loads, file races, cab files, and Mark-of-the-Web silliness. It was also my first experience submitting to the MSRC Windows bug bounty since leaving Microsoft in April of 2022. 
 
 In the great tradition of naming vulnerabilities, I've lovingly named this one ThemeBleed (no logo as of yet but I'm accepting submissions.)
 
@@ -83,20 +83,20 @@ __int64 __fastcall LoadThemeLibrary(const WCHAR *msstyles_path, HMODULE *out_mod
 
 The `ReviseVersionIfNecessary` function which is called by the previous step performs several actions. Given a path to a `.msstyles` file, it will perform the following:
 
-- Create a new file path by appending `_vrf.dll` to the `.msstyles` file path.
-- Check if this new `_vrf.dll` file exists. If not, exit.
-- Open the `_vrf.dll` file
-- Verify the signature on the `_vrf.dll` file. If the signature is invalid, exit.
-- Close the `_vrf.dll` file
-- Load the `_vrf.dll` file as a DLL and call the `VerifyThemeVersion` function.
+1. Create a new file path by appending `_vrf.dll` to the `.msstyles` file path.
+2. Check if this new `_vrf.dll` file exists. If not, exit.
+3. Open the `_vrf.dll` file
+4. Verify the signature on the `_vrf.dll` file. If the signature is invalid, exit.
+5. Close the `_vrf.dll` file
+6. Load the `_vrf.dll` file as a DLL and call the `VerifyThemeVersion` function.
 
 The goal of this appears to be to attempt to safely load a signed DLL and call a function. This implementation is flawed however, because the DLL is closed after verifying the signature in step 5, and then re-opened when the DLL is loaded via a call to LoadLibrary in step 6. This provides a race window between those two steps where an attacker may replace the `_vrf.dll` file that has had its signature verified, with a malicious one that is not signed. That malicious DLL will then be loaded and executed.
 
-### 4. Mark-of-The-Web Bypass
+### 4. Mark-of-the-Web Bypass
 
-If a user downloads a `.theme` file, upon launching it they will receive a security warning due to the presence of Mark-of-The-Web on the file. It turns out this can be bypassed by packaging the `.theme` file in a `.themepack` file.
+If a user downloads a `.theme` file, upon launching it they will receive a security warning due to the presence of Mark-of-the-Web on the file. It turns out this can be bypassed by packaging the `.theme` file in a `.themepack` file.
 
-A `.themepack` file is a cab file containing a `.theme` file. When a `.themepack` file is opened, the contained `.theme` file will be loaded. When opening a `.themepack` file with mark-of-the-web, no warning is displayed, so the warning that would normally be seen is bypassed. 
+A `.themepack` file is a cab file containing a `.theme` file. When a `.themepack` file is opened, the contained `.theme` file will be loaded. When opening a `.themepack` file with Mark-of-the-Web, no warning is displayed, so the warning that would normally be seen is bypassed. 
 
 ## Proof of Concept
 
