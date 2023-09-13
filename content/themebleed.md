@@ -104,7 +104,7 @@ I developed a PoC for this issue. The PoC consists of two components, an SMB ser
 
 I chose to use an attacker controlled SMB server for this because a `.theme` file may point to a `.msstyle` path on a remote SMB share. Since the SMB share is attacker controlled, it can easily exploit the TOCTOU bug in `ReviseVersionIfNecessary` by returning a validly signed file when the client first requests it to check the signature, and then a malicious one when the client loads the DLL.
 
-The PoC can be found here: https://github.com/gabe-k/themebleed
+The PoC can be found here: [https://github.com/gabe-k/themebleed](https://github.com/gabe-k/themebleed)
 
 ## Environment Prep
 
