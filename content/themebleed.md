@@ -3,9 +3,10 @@ title = "CVE-2023-38146: Arbitrary Code Execution via Windows Themes"
 date = 2023-09-13
 [extra]
 author = "gabe_k"
+logo = "rt.svg"
 +++
 
-This is a fun bug I found while poking around at weird Windows file formats. It's a kind of classic Windows style vulnerability featuring broken signing, sketchy DLL loads, file races, cab files, and Mark-of-the-Web silliness. It was also my first experience submitting to the MSRC Windows bug bounty since leaving Microsoft in April of 2022. 
+This is a fun bug I found while poking around at weird Windows file formats. It's a kind of classic Windows style vulnerability featuring broken signing, sketchy DLL loads, file races, cab files, and Mark-of-the-Web silliness. It was also my first experience submitting to the MSRC Windows bug bounty since leaving Microsoft in April of 2022.
 
 In the great tradition of naming vulnerabilities, I've lovingly named this one ThemeBleed (no logo as of yet but I'm accepting submissions.)
 
@@ -96,7 +97,7 @@ The goal of this appears to be to attempt to safely load a signed DLL and call a
 
 If a user downloads a `.theme` file, upon launching it they will receive a security warning due to the presence of Mark-of-the-Web on the file. It turns out this can be bypassed by packaging the `.theme` file in a `.themepack` file.
 
-A `.themepack` file is a cab file containing a `.theme` file. When a `.themepack` file is opened, the contained `.theme` file will be loaded. When opening a `.themepack` file with Mark-of-the-Web, no warning is displayed, so the warning that would normally be seen is bypassed. 
+A `.themepack` file is a cab file containing a `.theme` file. When a `.themepack` file is opened, the contained `.theme` file will be loaded. When opening a `.themepack` file with Mark-of-the-Web, no warning is displayed, so the warning that would normally be seen is bypassed.
 
 ## Proof of Concept
 

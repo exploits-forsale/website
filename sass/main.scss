@@ -1,6 +1,23 @@
 @import "reset.scss";
+@import "alt.scss";
 
 $break-small: 900px; // at what point the site becomes "mobile"
+
+nav {
+    position: sticky;
+    margin: 0 auto;
+    max-width: 800px;
+    .logo {
+        /* max-height: 3em; */
+        width: 12em;
+        display: inline-block;
+    }
+    @media (max-width: $break-small) {
+        .logo {
+            padding: 0.5em;
+        }
+    }
+}
 
 body {
     //background: #eff1f5;
@@ -162,4 +179,15 @@ small {
     line-height: 0;
     margin: 0;
     padding: 0;
+}
+
+.alert {
+    background: #fd17b5;
+    display: block;
+    color: white;
+    position: fixed;
+    bottom: 0;
+    box-sizing: border-box;
+    font-family: "Arial", Times, sans-serif;
+    padding: 0.5em;
 }

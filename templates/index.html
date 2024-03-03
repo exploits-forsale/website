@@ -1,14 +1,32 @@
-{% extends "base.html" %}
+{% extends "base.html" %} {% block title %} exploits.forsale {% endblock title
+%} {% block body_class %}alt bg{% endblock body_class %} {% block content %}
+<nav><img src="/logo.svg" class="logo"/></nav>
 
-{% block title %}
-exploits.forsale
-{% endblock title %}
-
-{% block content %}
-<section class="section">
-    {% set section = get_section(path="_index.md") %}
-    {% for page in section.pages %}
-    <a href="{{page.path}}"> {{page.title}} </a>
+<article>
+    {% set section = get_section(path="_index.md") %} {% for page in
+    section.pages %}
+    <a href="{{page.path}}">
+        <div>
+            <h3>{{page.title}} ›<h3>
+            <date>{{page.date}}</date>
+        </div>
+    </a>
     {% endfor %}
+</article>
+
+<br><br><br>
+
+<hr>
+
+<section>
+<br><br><br>
+<h1>Leaders in Cyber Lethality</h1>
+<br><br><br>
 </section>
+
+<a class="alert" href="/responsibility">
+    <footer>
+        Annual Transparency & Responsibility Report – Read The Report That Highlights The Safeguards Against Misuse of Our Technology, And Outlines Internal Governance and Compliance Processes
+    </footer>
+</a>
 {% endblock content %}
