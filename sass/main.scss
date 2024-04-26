@@ -12,11 +12,7 @@ nav {
         width: 12em;
         display: inline-block;
     }
-    @media (max-width: $break-small) {
-        .logo {
-            padding: 0.5em;
-        }
-    }
+
 }
 
 body {
@@ -193,4 +189,5 @@ small {
     font-family: "Arial", Times, sans-serif;
     padding: 0.5em;
     width: 100%;
+    font-size: 14px;
 }
