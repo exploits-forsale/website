@@ -7,7 +7,7 @@
 {% block content %}
 <nav><a href="/"><img src="/{{ page.extra.logo }}" class="logo"/></a></nav>
 <br/>
-<section class="section">
+<article>
     <h1>{{page.title}}</h1>
     <p>{{ page.date | date(format="%Y - %b %d") }} • {{ page.extra.author }} •
         <a alt="mastodon" rel="me" href="https://mastodon.social/@gabe_k" target="_blank">
@@ -25,5 +25,5 @@
     </p>
     </div>
     {{ page.content | safe }}
-</section>
+</article>
 {% endblock content %}

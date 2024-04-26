@@ -1,8 +1,11 @@
 {% extends "base.html" %} {% block title %} exploits.forsale {% endblock title
 %} {% block body_class %}alt bg{% endblock body_class %} {% block content %}
-<nav><img src="/logo.svg" class="logo"/></nav>
 
-<article>
+<header>
+    <nav><img src="/logo.svg" class="logo"/></nav>
+</header>
+<br/><br/>
+<section class="links">
     {% set section = get_section(path="_index.md") %} {% for page in
     section.pages %}
     <a href="{{page.path}}">
@@ -12,17 +15,11 @@
         </div>
     </a>
     {% endfor %}
-</article>
-
-<br><br><br>
-
-<hr>
-
-<section>
-<br><br><br>
-<h1>Leaders in Cyber Lethality</h1>
-<br><br><br>
 </section>
+
+<br>
+<h3 style="width: 100%; text-align: center; color: white;"><em>Leaders in Cyber Lethality</em></h3>
+<br>
 
 <a class="alert" href="/responsibility">
     <footer>

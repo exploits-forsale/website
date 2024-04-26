@@ -31,10 +31,11 @@ body {
     margin-bottom: 2em;
 }
 
-section {
+article {
     max-width: 800px;
     width: 100%;
     margin: 0 auto;
+    img {max-width: 100%;}
     @media (max-width: $break-small) {
         padding: 0 1em;
         box-sizing: border-box;
@@ -84,6 +85,7 @@ ol {
     @media (max-width: $break-small) {
         list-style-position: inside;
     }
+    padding-inline-start: 1em;
 }
 
 li {
@@ -190,4 +192,5 @@ small {
     box-sizing: border-box;
     font-family: "Arial", Times, sans-serif;
     padding: 0.5em;
+    width: 100%;
 }
