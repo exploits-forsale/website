@@ -2,7 +2,7 @@
 title = "CVE-2023-38146: Arbitrary Code Execution via Windows Themes"
 date = 2023-09-13
 [extra]
-author = "gabe_k"
+author = "carrot_c4k3"
 logo = "rt.svg"
 +++
 
