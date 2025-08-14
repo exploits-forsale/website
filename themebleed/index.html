@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1"
+        />
+        <link rel="stylesheet" href="/main.css" />
+        <title>
+CVE-2023-38146: Arbitrary Code Execution via Windows Themes
+</title>
+    </head>
+
+    <body class="">
+        
+<nav><a href="/"><img src="/rt.svg" class="logo"/></a></nav>
+<br/>
+<article>
+    <h1>CVE-2023-38146: Arbitrary Code Execution via Windows Themes</h1>
+    <p>2023 - Sep 13 • carrot_c4k3 •
+        <a alt="mastodon" rel="me" href="https://mastodon.social/@carrot_c4k3" target="_blank">
+            <span class="icon">
+                <svg role=" img" width="1em" fill="currentColor" stroke="none" viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <title>Mastodon</title>
+                    <path
+                        d="M23.268 5.313c-.35-2.578-2.617-4.61-5.304-5.004C17.51.242 15.792 0 11.813 0h-.03c-3.98 0-4.835.242-5.288.309C3.882.692 1.496 2.518.917 5.127.64 6.412.61 7.837.661 9.143c.074 1.874.088 3.745.26 5.611.118 1.24.325 2.47.62 3.68.55 2.237 2.777 4.098 4.96 4.857 2.336.792 4.849.923 7.256.38.265-.061.527-.132.786-.213.585-.184 1.27-.39 1.774-.753a.057.057 0 0 0 .023-.043v-1.809a.052.052 0 0 0-.02-.041.053.053 0 0 0-.046-.01 20.282 20.282 0 0 1-4.709.545c-2.73 0-3.463-1.284-3.674-1.818a5.593 5.593 0 0 1-.319-1.433.053.053 0 0 1 .066-.054c1.517.363 3.072.546 4.632.546.376 0 .75 0 1.125-.01 1.57-.044 3.224-.124 4.768-.422.038-.008.077-.015.11-.024 2.435-.464 4.753-1.92 4.989-5.604.008-.145.03-1.52.03-1.67.002-.512.167-3.63-.024-5.545zm-3.748 9.195h-2.561V8.29c0-1.309-.55-1.976-1.67-1.976-1.23 0-1.846.79-1.846 2.35v3.403h-2.546V8.663c0-1.56-.617-2.35-1.848-2.35-1.112 0-1.668.668-1.67 1.977v6.218H4.822V8.102c0-1.31.337-2.35 1.011-3.12.696-.77 1.608-1.164 2.74-1.164 1.311 0 2.302.5 2.962 1.498l.638 1.06.638-1.06c.66-.999 1.65-1.498 2.96-1.498 1.13 0 2.043.395 2.74 1.164.675.77 1.012 1.81 1.012 3.12z">
+                    </path>
+                </svg>
+            </span>
+            mastodon
+        </a>
+    </p>
+    </div>
+    <p>This is a fun bug I found while poking around at weird Windows file formats. It's a kind of classic Windows style vulnerability featuring broken signing, sketchy DLL loads, file races, cab files, and Mark-of-the-Web silliness. It was also my first experience submitting to the MSRC Windows bug bounty since leaving Microsoft in April of 2022.</p>
+<p>In the great tradition of naming vulnerabilities, I've lovingly named this one ThemeBleed (no logo as of yet but I'm accepting submissions.)</p>
+<p>Overall it was a lot of fun finding and PoC-ing this vulnerability, and MSRC was incredibly fast in responding and judging it for bounty :^]</p>
+<blockquote>
+<p>Below is a slightly modified version of the report I sent to Microsoft. After the report is a timeline and my notes on their fix.</p>
+</blockquote>
+<h2 id="summary">Summary</h2>
+<p>A series of issues exist on Windows 11 which can lead to arbitrary code being executed when a user loads a <code>.theme</code> file.</p>
+<h2 id="bug-details">Bug Details</h2>
+<h3 id="1-background">1. Background</h3>
+<p>On Windows, <code>.theme</code> files allow customization of the OS appearance. The <code>.theme</code> files themselves are ini files, which contain configuration details. Clicking on a <code>.theme</code> file on Windows 11 will invoke the following command:</p>
+<pre style="background-color:#fdf6e3;color:#657b83;"><code><span>&quot;C:\WINDOWS\system32\rundll32.exe&quot; C:\WINDOWS\system32\themecpl.dll,OpenThemeAction &lt;theme file path&gt;
+</span></code></pre>
+<p>This vulnerability specifically deals with the handling of <code>.msstyles</code> files. These are PE (DLL) files that contain resources such as icons to be used in a theme, but (should) contain no code. A <code>.msstyles</code> file can be referenced in a <code>.theme</code> file in the following way:</p>
+<pre style="background-color:#fdf6e3;color:#657b83;"><code><span>[VisualStyles]
+</span><span>Path=%SystemRoot%\resources\Themes\Aero\Aero.msstyles
+</span></code></pre>
+<p>When the <code>.theme</code> file is opened, the <code>.msstyles</code> file will also be loaded.</p>
+<h3 id="2-the-version-999-check">2. The &quot;Version 999&quot; Check</h3>
+<p>When loading a <code>.msstyles</code> file, the <code>LoadThemeLibrary</code> in <code>uxtheme.dll</code> will check the version of the theme. It will do this by loading the resource named <code>PACKTHEM_VERSION</code> from the binary. If the version it reads is 999, it will then call into another function <code>ReviseVersionIfNecessary</code>. A decompiled version of this function with the relevant parts commented can be seen below:</p>
+<pre data-lang="c" style="background-color:#fdf6e3;color:#657b83;" class="language-c "><code class="language-c" data-lang="c"><span style="color:#859900;">__int64</span><span> __fastcall </span><span style="color:#b58900;">LoadThemeLibrary</span><span>(</span><span style="color:#586e75;">const </span><span style="color:#859900;">WCHAR *</span><span style="color:#268bd2;">msstyles_path</span><span>, </span><span style="color:#859900;">HMODULE *</span><span style="color:#268bd2;">out_module</span><span>, </span><span style="color:#268bd2;">int </span><span style="color:#859900;">*</span><span style="color:#268bd2;">out_version</span><span>)
+</span><span>{
+</span><span>  </span><span style="color:#859900;">HMODULE</span><span> module_handle;
+</span><span>  </span><span style="color:#268bd2;">signed int</span><span> result;
+</span><span>  </span><span style="color:#268bd2;">int</span><span> version;
+</span><span>  </span><span style="color:#268bd2;">signed int</span><span> return_val;
+</span><span>  </span><span style="color:#268bd2;">unsigned int</span><span> resource_size;
+</span><span>  </span><span style="color:#859900;">__int16 *</span><span>version_ptr;
+</span><span>
+</span><span>  </span><span style="color:#859900;">if </span><span>( out_version )
+</span><span>    </span><span style="color:#859900;">*</span><span>out_version = </span><span style="color:#6c71c4;">0</span><span>;
+</span><span>  module_handle = </span><span style="color:#b58900;">LoadLibraryExW</span><span>(msstyles_path, </span><span style="color:#6c71c4;">0</span><span>, </span><span style="color:#6c71c4;">2</span><span style="color:#268bd2;">u</span><span>);
+</span><span>  </span><span style="color:#859900;">if </span><span>( !module_handle )
+</span><span>    </span><span style="color:#859900;">return </span><span>(</span><span style="color:#268bd2;">unsigned int</span><span>)</span><span style="color:#b58900;">MakeErrorLast</span><span>();
+</span><span>  result = </span><span style="color:#b58900;">GetPtrToResource</span><span>(
+</span><span>             module_handle,
+</span><span>             </span><span style="color:#268bd2;">L</span><span style="color:#839496;">&quot;</span><span style="color:#2aa198;">PACKTHEM_VERSION</span><span style="color:#839496;">&quot;</span><span>,
+</span><span>             (</span><span style="color:#586e75;">const </span><span style="color:#268bd2;">unsigned </span><span style="color:#859900;">__int16 *</span><span>)</span><span style="color:#6c71c4;">1</span><span>,
+</span><span>             (</span><span style="color:#268bd2;">void </span><span style="color:#859900;">**</span><span>)</span><span style="color:#859900;">&amp;</span><span>version_ptr,
+</span><span>             </span><span style="color:#859900;">&amp;</span><span>resource_size); </span><span style="color:#93a1a1;">// !!! [1] version number is extracted from resource &quot;PACKTHEM_VERSION&quot;
+</span><span>  </span><span style="color:#859900;">if </span><span>( result &lt; </span><span style="color:#6c71c4;">0 </span><span>|| resource_size != </span><span style="color:#6c71c4;">2 </span><span>)
+</span><span>    </span><span style="color:#859900;">goto</span><span> LABEL_22;
+</span><span>  version = </span><span style="color:#859900;">*</span><span>version_ptr;
+</span><span>  </span><span style="color:#859900;">if </span><span>( out_version )
+</span><span>    </span><span style="color:#859900;">*</span><span>out_version = version;
+</span><span>  return_val = -</span><span style="color:#6c71c4;">2147467259</span><span>;
+</span><span>  </span><span style="color:#859900;">if </span><span>( version &gt;= </span><span style="color:#6c71c4;">4 </span><span>)
+</span><span>  {
+</span><span>    </span><span style="color:#859900;">if </span><span>( version &gt; </span><span style="color:#6c71c4;">4 </span><span>)
+</span><span>      result = -</span><span style="color:#6c71c4;">2147467259</span><span>;
+</span><span>    return_val = result;
+</span><span>  }
+</span><span>  </span><span style="color:#859900;">if </span><span>( return_val &lt; </span><span style="color:#6c71c4;">0 </span><span>&amp;&amp; (_WORD)version == </span><span style="color:#6c71c4;">999 </span><span>) </span><span style="color:#93a1a1;">// !!! [2] special case for version 999
+</span><span>  {
+</span><span>    resource_size = </span><span style="color:#6c71c4;">999</span><span>;
+</span><span>    return_val = </span><span style="color:#b58900;">ReviseVersionIfNecessary</span><span>(msstyles_path, </span><span style="color:#6c71c4;">999</span><span>, (</span><span style="color:#268bd2;">int </span><span style="color:#859900;">*</span><span>)</span><span style="color:#859900;">&amp;</span><span>resource_size); </span><span style="color:#93a1a1;">// !!! [3] call to `ReviseVersionIfNecessary`
+</span><span style="color:#859900;">...
+</span><span>}
+</span></code></pre>
+<h3 id="3-time-of-check-time-of-use-in-reviseversionifnecessary-allows-signature-bypass">3. Time-of-Check-Time-of-Use in ReviseVersionIfNecessary Allows Signature Bypass</h3>
+<p>The <code>ReviseVersionIfNecessary</code> function which is called by the previous step performs several actions. Given a path to a <code>.msstyles</code> file, it will perform the following:</p>
+<ol>
+<li>Create a new file path by appending <code>_vrf.dll</code> to the <code>.msstyles</code> file path.</li>
+<li>Check if this new <code>_vrf.dll</code> file exists. If not, exit.</li>
+<li>Open the <code>_vrf.dll</code> file</li>
+<li>Verify the signature on the <code>_vrf.dll</code> file. If the signature is invalid, exit.</li>
+<li>Close the <code>_vrf.dll</code> file</li>
+<li>Load the <code>_vrf.dll</code> file as a DLL and call the <code>VerifyThemeVersion</code> function.</li>
+</ol>
+<p>The goal of this appears to be to attempt to safely load a signed DLL and call a function. This implementation is flawed however, because the DLL is closed after verifying the signature in step 5, and then re-opened when the DLL is loaded via a call to LoadLibrary in step 6. This provides a race window between those two steps where an attacker may replace the <code>_vrf.dll</code> file that has had its signature verified, with a malicious one that is not signed. That malicious DLL will then be loaded and executed.</p>
+<h3 id="4-mark-of-the-web-bypass">4. Mark-of-the-Web Bypass</h3>
+<p>If a user downloads a <code>.theme</code> file, upon launching it they will receive a security warning due to the presence of Mark-of-the-Web on the file. It turns out this can be bypassed by packaging the <code>.theme</code> file in a <code>.themepack</code> file.</p>
+<p>A <code>.themepack</code> file is a cab file containing a <code>.theme</code> file. When a <code>.themepack</code> file is opened, the contained <code>.theme</code> file will be loaded. When opening a <code>.themepack</code> file with Mark-of-the-Web, no warning is displayed, so the warning that would normally be seen is bypassed.</p>
+<h2 id="proof-of-concept">Proof of Concept</h2>
+<p>I developed a PoC for this issue. The PoC consists of two components, an SMB server executable to be run on an attacker's machine, and a <code>.theme</code> file to be opened on the target's machine.</p>
+<p>I chose to use an attacker controlled SMB server for this because a <code>.theme</code> file may point to a <code>.msstyle</code> path on a remote SMB share. Since the SMB share is attacker controlled, it can easily exploit the TOCTOU bug in <code>ReviseVersionIfNecessary</code> by returning a validly signed file when the client first requests it to check the signature, and then a malicious one when the client loads the DLL.</p>
+<p>The PoC can be found here: <a href="https://github.com/exploits-forsale/themebleed">https://github.com/exploits-forsale/themebleed</a></p>
+<h2 id="environment-prep">Environment Prep</h2>
+<p>To run the PoC you will need two machines, one attacker machine which will run the SMB server, and one target machine where you will load the <code>.theme</code> file. Below are the requirements for the respective machines:</p>
+<h3 id="attacker-machine">Attacker machine</h3>
+<ul>
+<li>Windows 10 or 11</li>
+<li>Disable &quot;Server&quot; service to free up the SMB port (disable and restart, do not just stop the service)</li>
+<li>Up to date .NET</li>
+<li>Accessible to target machine on the network</li>
+</ul>
+<h3 id="target-machine">Target machine</h3>
+<ul>
+<li>Latest Windows 11</li>
+</ul>
+<h2 id="repro-steps">Repro Steps</h2>
+<ol>
+<li>Create the <code>.theme</code> file by running: <code>themebleed.exe make_theme &lt;attacker machine ip&gt; exploit.theme</code></li>
+<li>On the attacker machine run: <code>themebleed.exe server</code></li>
+<li>On the target machine open <code>exploit.theme</code></li>
+</ol>
+<p>This should result in the calculator opening on the target machine. This shows that arbitrary code has been executed.</p>
+<h2 id="credits">Credits</h2>
+<p>The PoC makes use of the <a href="https://github.com/TalAloni/SMBLibrary">SMBLibrary</a> by Tal Aloni</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>This is a reliable vulnerability that goes from loading a theme to downloading and executing code without memory corruption. Additionally this vulnerability appears to be new and only present in Windows 11. I would request that this submission be considered for bounty.</p>
+<p>To fix this vulnerability I would recommend:</p>
+<ul>
+<li>Removing the &quot;version 999&quot; functionality altogether, but I'm not entirely sure what it's intended use is.</li>
+<li>Signing and verifying the <code>_vrf.dll</code> binary in the standard way Windows verifies other code, rather than this which is vulnerable to these kinds of race conditions.</li>
+<li>Disallow loading resources from remote shares in theme files.</li>
+<li>Add Mark-of-the-Web warnings to <code>.themepack</code> files.</li>
+</ul>
+<blockquote>
+<p>End of original report</p>
+</blockquote>
+<h2 id="reporting-timeline">Reporting Timeline</h2>
+<ul>
+<li>5/15/2023 - Report and PoC submitted to Microsoft.</li>
+<li>5/16/2023 - Acknowledgement of vulnerability by Microsoft.</li>
+<li>5/17/2023 - $5,000 bounty rewarded</li>
+<li>9/12/2023 - Fix released.</li>
+</ul>
+<h2 id="microsoft-fix-analysis">Microsoft Fix Analysis</h2>
+<p>Microsoft's released fix for the issue removed the &quot;version 999&quot; functionality entirely. While that migitates this specific exploit, it still does not address the TOCTOU issue in the signing of <code>.msstyles</code> files.</p>
+<p>Additionally Microsoft has not added Mark-of-the-Web warnings on <code>.themepack</code> files.</p>
+<small>
+<p><strong>extra thnx</strong></p>
+<p>lander brandt - wellness director</br>
+squiffy - transportation coordinator</br>
+doomy - cultural attache</br>
+ian - covid response</br>
+james willy - support (emotional/financial/millitary)</p>
+
+</article>
+
+    </body>
+</html>

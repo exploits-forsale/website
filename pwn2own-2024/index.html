@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1"
+        />
+        <link rel="stylesheet" href="/main.css" />
+        <title>
+CVE-2024-30088 Pwning Windows Kernel @ Pwn2Own Vancouver 2024 (Plus Xbox)
+</title>
+    </head>
+
+    <body class="">
+        
+<nav><a href="/"><img src="/zd.svg" class="logo"/></a></nav>
+<br/>
+<article>
+    <h1>CVE-2024-30088 Pwning Windows Kernel @ Pwn2Own Vancouver 2024 (Plus Xbox)</h1>
+    <p>2025 - Aug 14 • carrot_c4k3 •
+        <a alt="mastodon" rel="me" href="https://mastodon.social/@carrot_c4k3" target="_blank">
+            <span class="icon">
+                <svg role=" img" width="1em" fill="currentColor" stroke="none" viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <title>Mastodon</title>
+                    <path
+                        d="M23.268 5.313c-.35-2.578-2.617-4.61-5.304-5.004C17.51.242 15.792 0 11.813 0h-.03c-3.98 0-4.835.242-5.288.309C3.882.692 1.496 2.518.917 5.127.64 6.412.61 7.837.661 9.143c.074 1.874.088 3.745.26 5.611.118 1.24.325 2.47.62 3.68.55 2.237 2.777 4.098 4.96 4.857 2.336.792 4.849.923 7.256.38.265-.061.527-.132.786-.213.585-.184 1.27-.39 1.774-.753a.057.057 0 0 0 .023-.043v-1.809a.052.052 0 0 0-.02-.041.053.053 0 0 0-.046-.01 20.282 20.282 0 0 1-4.709.545c-2.73 0-3.463-1.284-3.674-1.818a5.593 5.593 0 0 1-.319-1.433.053.053 0 0 1 .066-.054c1.517.363 3.072.546 4.632.546.376 0 .75 0 1.125-.01 1.57-.044 3.224-.124 4.768-.422.038-.008.077-.015.11-.024 2.435-.464 4.753-1.92 4.989-5.604.008-.145.03-1.52.03-1.67.002-.512.167-3.63-.024-5.545zm-3.748 9.195h-2.561V8.29c0-1.309-.55-1.976-1.67-1.976-1.23 0-1.846.79-1.846 2.35v3.403h-2.546V8.663c0-1.56-.617-2.35-1.848-2.35-1.112 0-1.668.668-1.67 1.977v6.218H4.822V8.102c0-1.31.337-2.35 1.011-3.12.696-.77 1.608-1.164 2.74-1.164 1.311 0 2.302.5 2.962 1.498l.638 1.06.638-1.06c.66-.999 1.65-1.498 2.96-1.498 1.13 0 2.043.395 2.74 1.164.675.77 1.012 1.81 1.012 3.12z">
+                    </path>
+                </svg>
+            </span>
+            mastodon
+        </a>
+    </p>
+    </div>
+    <h2 id="intro">Intro</h2>
+<p>In 2024 I participated in Pwn2Own Vancouver and ended up scoring a full win in the Windows Local EoP category. Participating in Pwn2Own has been a long time goal for me and it was a really wonderful experience! In this post I’ll go through my process of finding and exploiting the vulnerability that I used in the contest.</p>
+<h2 id="a-primer-on-probing">A Primer on Probing</h2>
+<p>I would like to start off this post with a quick note that is important to keep in mind when thinking about the bugs and exploitation techniques in this post. One thing that always seems to surprise people who do kernel vulnerability research against other operating systems such as Linux or macOS to learn is that Windows does not enable <a href="https://en.wikipedia.org/wiki/Supervisor_Mode_Access_Prevention">SMAP</a>. On operating systems that do enable SMAP buffers residing in user mode memory must be deliberately copied into and out of kernel memory by using specific APIs such as copyin and copyout in the case of Linux, any other attempt to directly dereference a pointer to user mode memory will result in an exception. Windows kernel code on the other hand can dereference user mode memory at any point with no problem.</p>
+<p>Instead of having single APIs like copyin and copyout to capture user mode memory and copy it to kernel mode, every pointer that comes from user mode is supposed to be checked using ProbeForRead and ProbeForWrite. These functions do not copy the memory into kernel mode, they simply check that the pointer passed in resides in the user mode range, to keep user mode processes from specifying kernel pointers. After the pointer has been “probed” it is treated like any other pointer, and it is up to the developer if they choose to copy the contents into kernel mode or simply continue operating on the user mode address. When developers opt for the latter option, they open themselves up to a lot of risk: many kernel functions are not meant to operate on user mode memory and may be unsafe to handle untrusted user input. This appears to be exactly the case for the vulnerabilities discussed in this post: user mode pointers being passed to functions that should only accept kernel mode pointers.</p>
+<h2 id="research-process">Research Process</h2>
+<p>I would love to be able to provide a perfectly clear description of my research process when looking for vulnerabilities, but in reality it is a very scattershot process of opening a lot of IDA Windows and closing them based off of a sort of gut-feel. The process I followed in this was roughly the same as that outlined by Fabien Perigaud of Synacktiv in his <a href="https://www.synacktiv.com/sites/default/files/2021-10/2021_sthack_windows_lpe.pdf">2021 presentation on targeting Windows 10 for Pwn2Own</a>: enumerate default kernel drivers and start reversing.</p>
+<p>One driver stuck out to me as it was relatively new: bfs.sys. This “Brokering File System” driver appeared starting in 23H2 to provide <a href="https://blogs.windows.com/windowsdeveloper/2023/06/14/public-preview-improve-win32-app-security-via-app-isolation/">file system isolation to applications</a>. I began reverse engineering the IOCTL handlers and came across a race condition vulnerability. </p>
+<h2 id="the-first-not-applicable-vuln">The First (Not Applicable) Vuln</h2>
+<p>When returning data to user mode in the function <code>BfsProcessQueryPolicyRequest</code>, the driver constructs a <code>UNICODE_STRING</code> struct in user mode memory. After setting up the length and pointer fields of the <code>UNICODE_STRING</code> struct, the driver then calls <a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-rtlcopyunicodestring">RtlCopyUnicodeString</a> with the destination parameter pointing to this struct in user mode memory.</p>
+<p>The <code>RtlCopyUnicodeString</code> function is only designed to process <code>UNICODE_STRING</code> structures residing in kernel mode, and use of it on buffers residing in user mode memory is unsafe, as the function does not probe any of the Buffer pointers in the <code>UNICODE_STRING</code> structures passed to it. This means that a <code>UNICODE_STRING</code> structure residing in user mode memory may contain a Buffer pointer to kernel mode memory. Because of this, it is possible for user mode to make a string be copied to an arbitrary kernel mode address.</p>
+<p>This vulnerability is somewhat similar to the double-fetches I described in a <a href="https://exploits.forsale/24h2-nt-exploit/">previous blog post</a>, but with one difference: in a typical double-fetch a value is read twice. Here a value is written and then read back, so while the exploitation is similar the pattern is slightly different.</p>
+<p>Having found a vulnerability I was confident I could reliably exploit, I started preparing an exploit targeting the version of Windows that would be used at Pwn2Own: 23H2. At this point I encountered an issue: the vulnerable function was not present in 23H2. I typically perform my research on Windows Insider Canary builds to ensure that all bugs I discover are eligible for the Windows Insider bug bounty. As a result, I sometimes end up discovering vulnerabilities that have not shipped publicly to users yet. This was, unfortunately for me, one of those scenarios.</p>
+<p>I was disheartened by the discovery that my vulnerability would not help my chances at Pwn2Own, but I was still pleased with the bug that I had found. I was specifically curious to see if there were any other spots in Windows where the same mistake regarding use of <code>RtlCopyUnicodeString</code> on user mode memory existed, so I began to hunt for variants in 23H2.</p>
+<h2 id="variant-hunting">Variant Hunting</h2>
+<p>My one persistent area of research in Windows is the NT kernel (ntoskrnl.exe). I’ve previously written about some <a href="https://exploits.forsale/24h2-nt-exploit/">vulnerabilities I found in NT</a>, and it is generally an attractive attack surface as NT syscalls are accessible to any process regardless of sandboxing. Because of this, I picked NT as my first candidate for variant hunting.</p>
+<p>My initial pool of variants came from simply looking for calls to <code>RtlCopyUnicodeString</code> inside NT. This yielded around 80 results, lots to dig through. The scenario I was looking for was a call to <code>RtlCopyUnicodeString</code> in a syscall, with the destination string passed into <code>RtlCopyUnicodeString</code> pointing to user mode memory.</p>
+<p>Function names in NT are helpfully prefixed with an acronym corresponding to their component (ex: Ps for process related function, Fs for file system related functions, etc.). Much of the code inside NT is not directly accessible via syscall entry points, so I focused first on looking at instances of calls to <code>RtlCopyUnicodeString</code> inside components that I knew exposed a large amount of code via syscalls.</p>
+<h1 id="the-second-vuln">The Second Vuln</h1>
+<p>After going through a few of the candidates I came across one instance, in <code>AuthzBasepCopyoutInternalSecurityAttributes</code>, which appeared to be directly on a syscall path. I placed a breakpoint on the function in a kernel debugger and used the VM in hopes of triggering the code. After a bit I managed to get a hit, but it was only being called from within the kernel by tcpip.sys, so the destination string was still in kernel mode.<br />
+<img src="https://exploits.forsale/pwn2own-2024/image3.png" alt="" /><br />
+<em>The call to RtlCopyUnicodeString when called from a kernel driver.</em></p>
+<p>Having found this instance of the code being triggered I was able to mimic the way that tcpip.sys called the syscall and create a user mode program that would call it in a similar way. Once I had created a program to call the syscall in the same way I once again placed a breakpoint on the call to <code>RtlCopyUnicodeString</code> inside <code>AuthzBasepCopyoutInternalSecurityAttributes</code> and ran my program. I saw that the destination string was indeed pointing to user mode memory, meaning this instance is indeed vulnerable in the same way that bfs.sys was. I was very excited to have found a bug that looked promising, but it was time for more reversing to understand what exactly this code was that contained the bug.</p>
+<p><img src="https://exploits.forsale/pwn2own-2024/image5.png" alt="" /><br />
+<em>The call to RtlCopyUnicodeString when called from a user mode program.</em></p>
+<h1 id="understanding-the-area">Understanding The Area</h1>
+<p>As can be seen on the stack, the syscall that is being called here is <code>NtQueryInformationToken</code>. <code>NtQueryInformationToken</code>, like other <code>NtQueryInformation*</code> syscalls, contains a gigantic switch statement for handling different information classes that can be passed in to query information about kernel objects from user mode. In my previous post I discussed discovering and exploiting a vulnerability in <code>NtQueryInformationThread</code>. Because of the numbers of different information classes handled these syscalls contain enormous complexity, all hidden behind a single syscall entrypoint.</p>
+<p>This bug is in the handling of the <code>TokenAccessInformation</code> information class. Microsoft documentation states the following regarding this information class:</p>
+<pre style="background-color:#fdf6e3;color:#657b83;"><code><span>The buffer receives a TOKEN_ACCESS_INFORMATION structure that specifies security information contained in the token.  
+</span></code></pre>
+<p>The definition of the <code>TOKEN_ACCESS_INFORMATION</code> in the public Windows headers is as follows:</p>
+<pre data-lang="c" style="background-color:#fdf6e3;color:#657b83;" class="language-c "><code class="language-c" data-lang="c"><span style="color:#268bd2;">typedef struct</span><span> _TOKEN_ACCESS_INFORMATION {  
+</span><span>  PSID_AND_ATTRIBUTES_HASH     SidHash;  
+</span><span>  PSID_AND_ATTRIBUTES_HASH     RestrictedSidHash;  
+</span><span>  PTOKEN_PRIVILEGES            Privileges;  
+</span><span>  LUID                         AuthenticationId;  
+</span><span>  TOKEN_TYPE                   TokenType;  
+</span><span>  SECURITY_IMPERSONATION_LEVEL ImpersonationLevel;  
+</span><span>  TOKEN_MANDATORY_POLICY       MandatoryPolicy;  
+</span><span>  </span><span style="color:#859900;">DWORD</span><span>                        Flags;  
+</span><span>  </span><span style="color:#859900;">DWORD</span><span>                        AppContainerNumber;  
+</span><span>  PSID                         PackageSid;  
+</span><span>  PSID_AND_ATTRIBUTES_HASH     CapabilitiesHash;  
+</span><span>  PSID                         TrustLevelSid;  
+</span><span>  PSECURITY_ATTRIBUTES_OPAQUE  SecurityAttributes;  
+</span><span>} TOKEN_ACCESS_INFORMATION, </span><span style="color:#859900;">*</span><span style="color:#b58900;">PTOKEN_ACCESS_INFORMATION</span><span>;  
+</span></code></pre>
+<p>The specific field that is being handled in <code>AuthzBasepCopyoutInternalSecurityAttributes</code> is the very last one, <code>SecurityAttributes</code>, which is of type <code>PSECURITY_ATTRIBUTES_OPAQUE</code>. By looking at the definition of this type in the public Windows headers we can see that it is simply typedef’d to a void pointer, meaning it is likely a private structure that Microsoft has chosen not to document.</p>
+<pre data-lang="c" style="background-color:#fdf6e3;color:#657b83;" class="language-c "><code class="language-c" data-lang="c"><span style="color:#268bd2;">typedef </span><span style="color:#859900;">PVOID </span><span style="color:#b58900;">PSECURITY_ATTRIBUTES_OPAQUE</span><span>;  
+</span></code></pre>
+<p>This doesn't really matter though if we want to quickly get an exploit together, what matters is we have found a juicy bug that allows us to write to kernel, and now we can get to exploiting it!</p>
+<h1 id="the-primitive">The Primitive</h1>
+<p>With this vulnerability we are able to write a 32-byte unicode string anywhere in kernel memory. We do not control the contents of the string, but we know what they are (in this case <code>&quot;TSA://ProcUnique&quot;</code>), so we can look for places where writing that string could allow us to build a read/write primitive.</p>
+<p>If we’re able to find a pointer field of an object which is set to NULL, and use our write primitive to write to 28 bytes before the pointer starts, we could corrupt the lower 4 bytes of the pointer while leaving the upper 4 bytes set to zero. This would result in the pointer containing a value which would be a valid user mode address. We could then map that address in our process and craft an object there which the kernel would act upon. </p>
+<p>When considering objects to target with this primitive I remembered <a href="https://www.ibm.com/think/x-force/patch-tuesday-exploit-wednesday-pwning-windows-ancillary-function-driver-winsock">chompie and FuzzySec’s blog post</a> about exploiting a bug in afd.sys, where they targeted an IO ring object, so I decided to give that a try.</p>
+<h1 id="io-ring-object-corruption">IO Ring Object Corruption</h1>
+<p>Corrupting the <code>RegBuffers</code> field of the <code>IORING_OBJECT</code> can allow for arbitrary kernel read/write, if the value it is corrupted with is a valid user mode address that we can map in our process. For more about this I recommend reading <a href="https://windows-internals.com/one-i-o-ring-to-rule-them-all-a-full-read-write-exploit-primitive-on-windows-11/">Yarden Shafir’s blog post</a> where she first outlined the technique, but the massively oversimplified tl;dr is that if you can corrupt the <code>RegBuffers</code> field of an IO ring object and make it point to a user mode address, you can achieve arbitrary kernel read/write.</p>
+<p>Immediately after creating a fresh IO ring object, we can look and see what all its fields are initialized to:<br />
+<img src="https://exploits.forsale/pwn2own-2024/image1.png" alt="" /></p>
+<p>Our goal here is to make <code>RegBuffers</code> point to a user mode address. Unfortunately, since our write primitive is 32-bytes, we cannot simply corrupt the <code>RegBuffers</code> field, but must corrupt the fields around it as well, including the <code>CompletionUserEvent</code> field, which is a pointer. After using out write to corrupt the IO ring object we can see the fields that have been modified:<br />
+<img src="https://exploits.forsale/pwn2own-2024/image4.png" alt="" /></p>
+<p>This is great because <code>RegBuffers</code> now points to a user mode address, however because <code>CompletionUserEvent</code> has been corrupted we have a new problem. Any use of the IO Ring object now will dereference this corrupted pointer, leading to a crash near the end of the syscall. Luckily, since this happens at the end, this means the write has already occurred, meaning we can perform one arbitrary write before crashing. We can use that arbitrary write to overwrite <code>CompletionUserEvent</code> and set it back to null, leaving the IO ring object in this final state:<br />
+<img src="https://exploits.forsale/pwn2own-2024/image2.png" alt="" /><br />
+At this point we have an IO ring object with RegBuffers pointing to a valid user mode address, and no other problematic corruption, meaning we’re able to read and write whatever kernel memory we want!</p>
+<h1 id="read-write-achieved">Read/Write Achieved!</h1>
+<p>With the read/write achieved the escalation is pretty simple, just do <a href="https://hshrzd.wordpress.com/2017/06/22/starting-with-windows-kernel-exploitation-part-3-stealing-the-access-token/">some classic token swapping</a>, and boom! We have successfully elevated our process. This is pretty much the end of the development process.</p>
+<h1 id="the-contest">The Contest</h1>
+<p>All that was left after this process was to wait eagerly for the date of the contest and hope that the vulnerability didn’t get fixed beforehand. Luckily the bug survived to the conference, the exploit worked successfully, and it was not a duplicate. Because it was not the first entry targeting Windows kernel it received a 50% prize payout of $15,000.</p>
+<p>Overall the event was a lot of fun. It was great to meet so many other talented hackers who were participating, and the suspense of demonstrating the exploit live definitely adds to the experience. I am really grateful that I got to participate and would definitely recommend it!</p>
+<h1 id="epilogue-collateral-damage-on-xbox">Epilogue: Collateral Damage on Xbox</h1>
+<h2 id="background">Background</h2>
+<p>I set out to find and exploit this bug solely with the goal of playing at Pwn2Own, and I had intended for the bug’s life to end there, but in May of 2024 the Xbox One Research team published a post about dumping decrypted Xbox games through a technique they named <a href="https://xboxoneresearch.github.io/games/2024/05/15/xbox-dump-games.html">Durango dumplings</a>. Console hacking, specifically the Xbox 360, was what got me interested in the world of security in the first place, so naturally I was excited to see progress being made on hacking modern Xbox consoles.</p>
+<p>The Xbox One Research team mentioned that they had achieved code execution in retail mode on Xbox and then exploited a kernel vulnerability to elevated privileges, but did not share their work that achieved those parts. I realized that the vulnerability I had used for Pwn2Own, since it was in NT, was likely present on Xbox and accessible from the sandboxes which most Xbox apps run in. Given that I decided to see if I could repurpose my Pwn2Own exploit to target the Xbox.</p>
+<h2 id="step-1-code-exec-on-xbox">Step 1: Code Exec on Xbox</h2>
+<p>The Xbox does not allow for arbitrary executables to simply run at Medium Integrity Level, like when you double-click a program on Windows, but it does allow developers to create and publish apps on the Xbox Store. These apps run in a UWP (or AppContainer) sandbox, which runs with a token that has Low Integrity Level, and is unable to access many devices and files. In order to exploit the kernel, we would first need to gain user mode code execution by exploiting one of these applications. With that in mind, I began to hunt around on the Xbox Store for applications that looked like good targets to gain initial code execution.</p>
+<p>I began by searching for scripting engines and anything that might contain an interpreter for code, and stumbled upon an application called Game Script. Game Script allows users to write programs in <a href="https://github.com/kgabis/ape">a language called Ape</a>.</p>
+<p>Given that I had never heard of Ape before, I began to poke around at the available APIs. I quickly found functions named <code>pointerSetUnsignedInteger8Bit</code> and <code>pointerGetUnsignedInteger8Bit</code> which, as the names suggest, allow reading and writing a single byte of memory. As simple as that, read/write in user mode was possible and the next question was turning that into code execution.</p>
+<p>The next API I discovered was <code>slBus_destroy</code>, which takes in a pointer to an object with a VTable and dereferences a pointer from it to perform a call. Combined with the read/write capability that I already had, this was sufficient to craft a function from within Ape that would allow calling arbitrary native functions.</p>
+<p>After unlocking the ability to call arbitrary native functions, the next step to get to truly executing native code is simply calling <code>VirtualAlloc</code> and <code>VirtualProtect</code>, and then boom, we are able to map and run (sandboxed) native code!</p>
+<h2 id="step-2-porting-the-exploit">Step 2: Porting The Exploit</h2>
+<p>Now that we have native code running the next step is to get our exploit running. The first step to this was to be able to load an actual executable, and not simply have to map and run shellcode. This task was generously taken on by my friend Lander Brandt, who wrote a <a href="https://landaire.net/reflective-pe-loader-for-xbox/">great blog post about the process</a>!</p>
+<p>After attempting to run basically the same exploit technique however, we quickly hit a wall: the exploit written for Pwn2Own assumed it would be run as Medium Integrity Level. This is important because the exploit relied on being able to obtain the address of kernel objects to target for corruption via calling <code>NtQuerySystemInformation</code>. This unfortunately does not work on Xbox however, because the process in which we have gained code execution is running as Low Integrity Level.</p>
+<p>In code paths where NT returns kernel pointers to user mode, there is a call to a function called <code>ExIsRestrictedCaller</code>, to make sure that the caller is not coming from a sandboxed process. It does this by checking if the caller is able to pass a security check based on a security descriptor named <code>SeMediumDaclSd</code>, which only allows access to callers with Medium Integrity Level or higher. With this in mind, it became time to look for another way to locate the kernel objects we needed to corrupt.</p>
+<h2 id="step-3-prefetching-the-kernel-base">Step 3: Prefetching The Kernel Base</h2>
+<p>While not having a kernel leak was annoying, I was not especially worried about if the exploit would still be feasible as I had been in a similar situation before. I described <a href="https://exploits.forsale/24h2-nt-exploit/">in a blog post last year</a> how I used a well known timing side channel with the prefetch instruction to locate the base address of the kernel on Windows 24H2 preview. All that I had to do now was collect timings from the Xbox and tweak until it became reliable. This was a fairly tedious process, especially for someone like myself who is not an expert in these things, but after a bit of work I was able to fairly reliably determine the kernel base via the prefetch side channel.</p>
+<h2 id="step-4-unlocking-ntquerysysteminformation">Step 4: Unlocking NtQuerySystemInformation</h2>
+<p>Unfortunately leaking the kernel base address is not a perfect substitute for knowing the precise object addresses provided by <code>NtQuerySystemInformation</code>, but what if it could be? It turns out it can be! As mentioned previously, the check stopping <code>NtQuerySystemInformation</code> from giving us kernel object pointers is the function <code>ExIsRestrictedCaller</code>. This function uses a global in NT called <code>SeMediumDaclSd</code>, which is a pointer to a security descriptor</p>
+<p>Because <code>SeMediumDaclSd</code> is a global, we can calculate where it is by simply adding its offset to the kernel base which we leaked. Additionally, because it is a pointer, if we can corrupt it then we can make it point to a different security descriptor, such as one which we craft in user mode which will allow callers with Low Integrity Level.</p>
+<p>This turns out to do the trick, and once <code>SeMediumDaclSd</code> has been corrupted we are able to once again call <code>NtQuerySystemInformation</code> exactly the same as we previously had, making the remainder of the exploit work basically the same as previously!</p>
+<h2 id="step-5-profit">Step 5: Profit!</h2>
+<p>At this point we’ve done it, we have exploited the kernel of the SystemOS virtual machine on Xbox! We are able to spawn a reverse shell, read and write arbitrary kernel memory, and just generally mess around. Because of the Xbox security model this is nowhere near a full “jailbreak”, but it has provided researchers with the ability to have a foothold on the console, and I’m hopeful that we will see more progress escalating to other parts of the system in the future.</p>
+<h1 id="thanks-to-the-following-ppl">thanks to the following ppl!!</h1>
+<p>squiffy<br />
+landaire<br />
+chompie<br />
+all the Xbox One Research team</p>
+<p>all of the other pwn2own organizers and participants</p>
+
+</article>
+
+    </body>
+</html>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://exploits.forsale/</loc>
+    </url>
+    <url>
+        <loc>https://exploits.forsale/24h2-nt-exploit/</loc>
+        <lastmod>2024-04-26</lastmod>
+    </url>
+    <url>
+        <loc>https://exploits.forsale/pwn2own-2024/</loc>
+        <lastmod>2025-08-14</lastmod>
+    </url>
+    <url>
+        <loc>https://exploits.forsale/themebleed/</loc>
+        <lastmod>2023-09-13</lastmod>
+    </url>
+</urlset>
