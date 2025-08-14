@@ -60,7 +60,7 @@ As can be seen on the stack, the syscall that is being called here is `NtQueryIn
 This bug is in the handling of the `TokenAccessInformation` information class. Microsoft documentation states the following regarding this information class:
 
 ```
-The buffer receives a [TOKEN_ACCESS_INFORMATION](https://learn.microsoft.com/en-us/windows/desktop/api/winnt/ns-winnt-token_access_information) structure that specifies security information contained in the token.  
+The buffer receives a TOKEN_ACCESS_INFORMATION structure that specifies security information contained in the token.  
 ```
 
 The definition of the `TOKEN_ACCESS_INFORMATION` in the public Windows headers is as follows:
