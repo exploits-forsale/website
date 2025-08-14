@@ -45,12 +45,12 @@ Function names in NT are helpfully prefixed with an acronym corresponding to the
 # The Second Vuln
 
 After going through a few of the candidates I came across one instance, in `AuthzBasepCopyoutInternalSecurityAttributes`, which appeared to be directly on a syscall path. I placed a breakpoint on the function in a kernel debugger and used the VM in hopes of triggering the code. After a bit I managed to get a hit, but it was only being called from within the kernel by tcpip.sys, so the destination string was still in kernel mode.  
-![](image1.png)  
+![](image3.png)  
 *The call to RtlCopyUnicodeString when called from a kernel driver.*
 
 Having found this instance of the code being triggered I was able to mimic the way that tcpip.sys called the syscall and create a user mode program that would call it in a similar way. Once I had created a program to call the syscall in the same way I once again placed a breakpoint on the call to `RtlCopyUnicodeString` inside `AuthzBasepCopyoutInternalSecurityAttributes` and ran my program. I saw that the destination string was indeed pointing to user mode memory, meaning this instance is indeed vulnerable in the same way that bfs.sys was. I was very excited to have found a bug that looked promising, but it was time for more reversing to understand what exactly this code was that contained the bug.
 
-![](image2.png)  
+![](image5.png)  
 *The call to RtlCopyUnicodeString when called from a user mode program.*
 
 # Understanding The Area
@@ -103,13 +103,13 @@ When considering objects to target with this primitive I remembered [chompie and
 Corrupting the `RegBuffers` field of the `IORING_OBJECT` can allow for arbitrary kernel read/write, if the value it is corrupted with is a valid user mode address that we can map in our process. For more about this I recommend reading [Yarden Shafir’s blog post](https://windows-internals.com/one-i-o-ring-to-rule-them-all-a-full-read-write-exploit-primitive-on-windows-11/) where she first outlined the technique, but the massively oversimplified tl;dr is that if you can corrupt the `RegBuffers` field of an IO ring object and make it point to a user mode address, you can achieve arbitrary kernel read/write.
 
 Immediately after creating a fresh IO ring object, we can look and see what all its fields are initialized to:  
-![](image3.png)
+![](image1.png)
 
 Our goal here is to make `RegBuffers` point to a user mode address. Unfortunately, since our write primitive is 32-bytes, we cannot simply corrupt the `RegBuffers` field, but must corrupt the fields around it as well, including the `CompletionUserEvent` field, which is a pointer. After using out write to corrupt the IO ring object we can see the fields that have been modified:  
 ![](image4.png)
 
 This is great because `RegBuffers` now points to a user mode address, however because `CompletionUserEvent` has been corrupted we have a new problem. Any use of the IO Ring object now will dereference this corrupted pointer, leading to a crash near the end of the syscall. Luckily, since this happens at the end, this means the write has already occurred, meaning we can perform one arbitrary write before crashing. We can use that arbitrary write to overwrite `CompletionUserEvent` and set it back to null, leaving the IO ring object in this final state:  
-![](image5.png)  
+![](image2.png)  
 At this point we have an IO ring object with RegBuffers pointing to a valid user mode address, and no other problematic corruption, meaning we’re able to read and write whatever kernel memory we want\!
 
 # Read/Write Achieved\!
@@ -172,4 +172,5 @@ squiffy
 landaire  
 chompie  
 all the Xbox One Research team  
+
 all of the other pwn2own organizers and participants
