@@ -1,9 +1,9 @@
 +++
-title = "Exploiting the NT Kernel in 24H2: New Bugs in Old Code & Side Channels Against KASLR"
+title = "CVE-2024-30088 Pwning Windows Kernel @ Pwn2Own Vancouver 2024 (Plus Xbox)"
 date = 2025-08-14
 [extra]
 author = "carrot_c4k3"
-logo = "cb.svg"
+logo = "zd.svg"
 +++
 
 ## Intro
